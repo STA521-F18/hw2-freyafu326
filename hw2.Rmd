@@ -1,0 +1,308 @@
+---
+title: "HW2 STA521 Fall18"
+author: '[Freyafu, zf43, freyafu326]'
+date: "Due September 19, 2018"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+## Backgound Reading
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+\newpage
+
+## Exploratory Data Analysis
+
+0.  Preliminary read in the data.  After testing, modify the code chunk so that output, messages and warnings are suppressed.  *Exclude text from final*
+
+```{r data}
+suppressWarnings(library(car))
+library(alr3)
+data(UN3, package="alr3")
+help(UN3) 
+library(car)
+library(knitr)
+library(GGally)
+library(dplyr)
+```
+
+\newpage
+1. Create a summary of the data.  How many variables have missing data?  Which are quantitative and which are qualtitative?
+
+```{r}
+summary(UN3)
+sapply(UN3, function(x) sum(is.na(x))) #Missing data for each variable
+sapply(UN3, function(x) class(x))
+```
+
+Comments: 
+All of the variables are quantitative. \
+ModernC: Percent of unmarried women using a modern method of contraception.\
+Change; Annual population growth rate, percent.\
+PPgdp: Per capita 2001 GDP, in US \$.\
+Frate: Percent of females over age 15 economically active.\
+Pop: Population, thousands.\
+Fertility:Expected number of live births per female, 2000\
+
+\newpage
+
+2. What is the mean and standard deviation of each quantitative predictor?  Provide in a nicely formatted table.
+
+```{r}
+A<-matrix(NA,7,2) #create an empty matrix to store values
+for (i in 1:7){
+  A[i,1]=mean(na.omit(UN3[,i])) #assign mean to the first column vector
+  A[i,2]=sd(na.omit(UN3[,i])) #assign sd to the second column vector
+}
+b<-colnames(UN3)
+c<-cbind.data.frame(b,round(A,3))
+colnames(c)<-c("Variables","Mean","Std")
+kable(c,format = "markdown")
+```
+
+\newpage
+
+3. Investigate the predictors graphically, using scatterplots or other tools of your choice. Create some plots
+highlighting the relationships among the predictors. Comment
+on your findings regarding trying to predict `ModernC` from the other variables.  Are there potential outliers, nonlinear relationships or transformations that appear to be needed based on your graphical EDA?
+
+```{r}
+UN3_0<-na.omit(UN3) #delate any rows that has missing values
+ggpairs(UN3_0,columns = 1:7,title = "Scatterplot for National Health Statistics") 
+#delete data that has 3 or more missing values in a row 
+delete.na <- function(DF, n=2) {
+  DF[rowSums(is.na(DF)) <= n,]
+}
+UN3_2<-delete.na(UN3)
+#use the data set UN3_0 afterwards
+```
+
+Comments: In the scatterplot of ModernC compared with PPgdp and fertility, there seems to be a non-linear relationship. In the scatterplot of ModernC and Pop, there are 2 potential outliners as they are really deviated from the rest of the data points. 
+\newpage
+## Model Fitting
+
+4.  Use the `lm()` function to perform a multiple linear regression with `ModernC` as the response and all other variables as the predictors, using the formula `ModernC ~ .`, where the `.` includes all remaining variables in the dataframe.  Create  diagnostic residual plot from the linear model object and comment on results regarding assumptions.  How many observations are used in your model fitting?
+
+```{r}
+model_1<-lm(ModernC~.,data = UN3_2)
+model_2<-lm(ModernC~.,data=UN3_0)
+model_1$df.residual
+model_2$df.residual # the data used in the lm model is the same for both datasets. Only rows with no missing values are considered
+summary(model_2)
+par(mfrow=c(2,2))
+plot(model_2)
+```
+
+Comments: For the residual versus fitted value plot, we want to see that the residuals is randomly distributed among positive and negative values. The plot looks fine, so the assumption of $E(\epsilon)=0$ is met\
+For the QQ plot, we want to check for nornality and see if the line is straight. The residuals are smaller
+than expected under normality. So it is lighter tailed, and the assumption of normality of residuals is not met.\ 
+For the scale location plot, we want to see the spread of the residuals is constant over the range
+of fitted values. However, it looks like the variance is getting larger as the fitted values become larger. Thus, the assumption of constant variance of residuals are not met.\ 
+For the residual versus leverage plot, we can barely see Cook’s distance lines (a red dashed line) because all cases are well inside of the Cook’s distance lines. And we see that there even though points like China and india are high leverage, they have small residuals. So maybe there are no potential outliners and influential points.  
+  
+  There are 125 observations used in our model fitting
+
+
+\newpage
+
+5. Examine added variable plots `car::avPlot` or `car::avPlots`  for your model above. Are there any plots that suggest that transformations are needed for any of the terms in the model? Describe. Is it likely that any of the localities are influential for any of the terms?  Which localities?  Which terms?  
+
+```{r}
+avPlots(model_2, terms=~.)
+```
+
+Comments: It looks like the variable Pop need transformation as the plot for it is least linear compared with others. The ppdgp may be another variable that needs transformation because it looks like the data points are clustered between -10000 to 5000. 
+  
+  Fot influential terms, it looks like China and India in the Pop plot maybe influential as their localities are around 1,000,000. It also looks like Cooks Island and Kuwaito maybe influential as their localities in the change plot are -1.5, 2.0 each. 
+   
+  
+\newpage
+6.  Using the Box-Tidwell  `car::boxTidwell` or graphical methods find appropriate transformations of the predictor variables to be used as predictors in the linear model.  If any predictors are negative, you may need to transform so that they are non-negative.  Describe your method and  the resulting transformations.
+
+
+```{r}
+#car::boxTidwell(ModernC~PPgdp,data=UN3_0)
+#car::boxTidwell(ModernC~PPgdp,other.x=~Change+Frate+Fertility+Purban+Pop,data=UN3_0)
+car::boxTidwell(ModernC~Pop+PPgdp,other.x=~Change+Frate+Fertility+Purban,data=UN3_0)
+range(UN3_0$Change)# the variable change has negative values
+UN3_2<-UN3_0 
+UN3_2$Change<-UN3_2$Change+2 # add a constant to change to make it unnegative
+powerTransform(as.matrix(UN3_2)~.,family = "bcnPower",data = UN3_0)
+```
+
+Comments: From the avplots above, we think Pop and PPgdp are potential variables that may need transformation. 
+  
+  The method we tried first is the boxTidewell power transform. We put variables like change,frate, Fertility and Purba in the other.x as the variables that we do not want to transform, and variables like Pop and PPgdp as the variables that we want to transform. For the variables that has MLE close to 1, we do not need transformation. The $\lambda$ value variable Pop for  is 0.407, so we can round it up to 0.5 and take the square root of Pop as transformation. For PPgdp, the $\lambda$ value for variable PPgdp is close to -0.129, so we can round it up to 0 and take the log of PPgdp as transformation. However, the p-value for the boxTidwell are not significant.
+  
+  We want to further justify what variables we want to transform. The second method we used is function powerTransform. For the variables that has MLE close to 1, we do not need transformation. The $\lambda$ value for variable Pop is 0.325, so we can round it up to 0.5 and take the square root of Pop as transformation. 
+  
+  We decide only to transform two variables, PPgdp and Pop. 
+
+\newpage
+7. Given the selected transformations of the predictors, select a transformation of the response using `MASS::boxcox` or `car::boxCox` and justify.
+
+```{r}
+pop_sqrt<-sqrt(UN3_0$Pop)
+PPgdp_log<-log(UN3_0$PPgdp)
+MASS::boxcox(ModernC~pop_sqrt+PPgdp_log+Change+Frate+Fertility+Purban, data = UN3_0,lambda = seq(-2, 2, length = 20))
+```
+
+Comments: It looks like the MLE for lamda for the predictor is around 0.8, which can round up to 1. So we do not need to transform the predictor. 
+
+8.  Fit the regression using the transformed variables.  Provide residual plots and added variables plots and comment.  If you feel that you need additional transformations of either the response or predictors, repeat any steps until you feel satisfied.
+
+```{r}
+model_3<-lm(ModernC~pop_sqrt+PPgdp_log+Change+Frate+Fertility+Purban,data = UN3_0)
+termplot(model_2, terms = "Pop",
+         partial.resid = T, se=T, rug=T,
+         smooth = panel.smooth)
+termplot(model_3, terms = "pop_sqrt",
+         partial.resid = T, se=T, rug=T,
+         smooth = panel.smooth)
+```
+
+Comments: We can see that the termplot looks much better for the variable population, as it follows a more linear trend for the data points 
+\newpage
+```{r}
+termplot(model_2, terms = "PPgdp",
+         partial.resid = T, se=T, rug=T,
+         smooth = panel.smooth)
+
+termplot(model_3, terms = "PPgdp_log",
+         partial.resid = T, se=T, rug=T,
+         smooth = panel.smooth)
+```
+
+Comments: We can see that the termplot looks much better for the variable GDP as well
+
+```{r}
+avPlots(model_3, terms=~.)
+par(mfrow=c(2,2))
+plot(model_3)
+```
+Comment: We see that the AVplot for PPgdp and Pop has improved a lot compared with the untransformed model. The residual plot is too. Though QQ-plot still looks heavy-tailed, the scale location plot suggests constant variance. 
+
+\newpage
+9. Start by finding the best transformation of the response and then find transformations of the predictors.  Do you end up with a different model than in 8?
+
+```{r}
+MASS::boxcox(ModernC~., data = UN3_0,lambda = seq(-2, 2, length = 20))
+#Comments: It looks like the MLE for lamda for the predictor is around 0.8, which can round up to 1
+# So we do not need to transform the predictor. 
+model_4<-lm(ModernC~.,data = UN3_0)
+avPlots(model_4, terms=~.) # the avplot suggest Pop and PPgdp may need transformation
+car::boxTidwell(ModernC~Pop+PPgdp,other.x=~Change+Frate+Fertility+Purban,data=UN3_0) 
+#repeat the BoxTidewell power transformation again to see what values should Pop and PPgdp to be transformed to 
+model_4<-lm(ModernC~pop_sqrt+PPgdp_log+Change+Frate+Fertility+Purban,data = UN3_0)
+avPlots(model_4, terms=~.) # avplot looks much better 
+```
+
+Comments: 
+We find the transformation from response to predictor to be exactly the same 
+
+\newpage
+10.  Are there any outliers or influential points in the data?  Explain.  If so, refit the model after removing any outliers and comment on residual plots.
+
+```{r}
+outlierTest(lm(ModernC~., data=UN3_0)) # test for outliners
+#UN3_1<-UN3_0[-c(25,50),]
+par(mfrow=c(2,2))
+plot(model_3)
+```
+
+Comments: The outlinerTest suggest there is no studentized residuals with Bonferonni p<0.05. Thus, we think there is no outliners. 
+  
+  We will use model 3. For the residual versus leverage plot, we can barely see Cook’s distance lines (a red dashed line) because all cases are well inside of the Cook’s distance lines. And we see that there even though points like China and india are high leverage, they have small residuals. So maybe there are no potential outliners and influential points. 
+  
+\newpage
+## Summary of Results
+
+11. For your final model, provide summaries of coefficients with 95% confidence intervals in a nice table with interpretations of each coefficient.  These should be in terms of the original units! 
+
+
+```{r}
+C<-summary(model_3)$coefficient
+A<-data.frame(confint(model_3))
+B<-data.frame(C[,1],A)
+colnames(B)<-c("Estimate","Lower Bound","Upper Bound")
+B<-round(B,5)
+kable(B,format = "markdown")
+```
+
+Comments: 
+A one unit increase in the square root of Population would result a 0.02302 unit increase in Modern C (Percent of unmarried women using a modern method of contraception) holding other variables constant. And the 95% CI for the square root of population is [0.008, 0.038]
+  
+  A one unit increase in the log of gdp would result in a 5.18 unit increase in Modern C (Percent of unmarried women using a modern method of contraception) holding other variables constant. And the 95% CI for the log of gdp is [2.49	7.87]  
+  A one unit increase in change would result in a 4.869 unit increase in Modern C (Percent of unmarried women using a modern method of contraception) holding other variables constant. And the 95% CI for the change is [0.824	8.914]  
+  A one unit increase in the Frate would result in a 0.194 unit increase in Modern C (Percent of unmarried women using a modern method of contraception) holding other variables constant. And the 95% CI for Frate is [0.043	0.345]  
+  A one unit increase in the Fertility would result in a -9.327 unit decrease in Modern C (Percent of unmarried women using a modern method of contraception) holding other variables constant. And the 95% CI for Fertility is [-12.793	-5.863]  
+  A one unit increase in the Purban would result in a -0.025 unit decrease in Modern C (Percent of unmarried women using a modern method of contraception) holding other variables constant. And the 95% CI for Purban is [-0.216	0.166]
+  
+
+\newpage
+
+12. Provide a paragraph summarizing your final model and findings suitable for the US envoy to the UN after adjusting for outliers or influential points.   You should provide a justification for any case deletions in your final model
+
+
+```{r}
+summary(model_3)
+```
+
+
+Comments:
+The final model is:
+  
+  ModernC ~ sqrt(Pop)+Log(PPgdp)+Change+Frate+Fertility+Purban
+  
+  Findings: We think the larger the population growth rate and the larger the population is, the more likely for unmariied women in a country to use modern method of contraception
+  
+  The larger the per capital GDP is, the more likely for unmariied women in a country to use modern method of contraception
+  
+  The larger the percent of females over age 15 economically active is, the more likely for unmariied women in a country to use modern method of contraception
+  
+  The larger the expected number of live births per female is, the more likely for unmariied women in a country to use modern method of contraception
+  
+  We did not delete and outliners or influential points. But in our model we only considered the data with no missing values because when we use the lm model fit, lm would only consider data that does not contain NA values. 
+
+\newpage
+## Methodology
+13. Prove that the intercept in the added variable scatter plot will always be zero.  _Hint:  use the fact that if $H$ is the project matrix which contains a column of ones, then $1_n^T (I - H) = 0$.  Use this to show that the sample mean of residuals will always be zero if there is an intercept._
+
+$$
+\begin{split}
+e_{(y)}&=\hat\beta_0+\hat\beta_1 e_x \ , \ H=X(X^TX)^{-1}X^T \\
+\underbrace{(I-H)y}_{y}&=\hat\beta_0 I+\hat\beta_1 \underbrace{(I-H)x_3}_{x} \\
+(I-H)y&=\hat\beta_0 I+[x_3^T(I-H)^T(I-H)x_3]^{-1}[(I-H)x_3]^T(I-H)y(I-H)x_3 \\
+(I-H)y&=\hat\beta_0 I+[x_3^T(I-H)x_3]^{-1}x_3^T(I-H)y(I-H)x_3 \\
+(I-H)y&=\hat\beta_0 I+[x_3^T(I-H)x_3]^{-1}x_3^T(I-H)y(I-H)x_3  \ ,  \ I \ - \ H \ is \  idempotent \\
+x_3^T(I-H)y&=x_3^T\hat\beta_0 I+x_3^T[x_3^T(I-H)x_3]^{-1}x_3^T(I-H)y(I-H)x_3 \\
+x_3^T(I-H)y&=x_3^T\hat\beta_0 I+[x_3^T(I-H)x_3][x_3^T(I-H)x_3]^{-1}x_3^T(I-H)y \ , \ constant\\
+x_3^T(I-H)y&=x_3^T\hat\beta_0 I+x_3^T(I-H)y \\
+0&=x_3^T\hat\beta_0 I \\
+\sum_{i=1}^{n} x_3^{(i)} \hat\beta_0  &=0 \\
+Thus, \  \hat\beta_0  \ is \ 0
+\end{split}
+$$
+
+
+14. For multiple regression with more than 2 predictors, say a full model given by `Y ~ X1 + X2 + ... Xp`   we create the added variable plot for variable `j` by regressing `Y` on all of the `X`'s except `Xj` to form `e_Y` and then regressing `Xj` on all of the other X's to form `e_X`.  Confirm that the slope in the manually constructed added variable plot for one of the predictors  in Ex. 10 is the same as the estimate from your model. 
+
+```{r}
+e_Y = residuals(lm(ModernC~pop_sqrt+PPgdp_log+Frate+Fertility+Purban,data=UN3_0))
+e_X1 = residuals(lm(Change ~ pop_sqrt+PPgdp_log+Frate+Fertility+Purban,data=UN3_0))
+df = data.frame(e_Y = e_Y, e_X1 = e_X1)
+ggplot(data=df, aes(x = e_X1, y = e_Y)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+summary(lm(ModernC~pop_sqrt+PPgdp_log+Frate+Fertility+Purban+Change,data=UN3_0))$coef
+summary(lm(e_Y ~ e_X1, data=df))$coef
+```
+
+Comments: Coefficient for Change is the same, which is 4.869. 
+
